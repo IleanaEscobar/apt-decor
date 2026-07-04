@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { get, ref, remove, set } from 'firebase/database'
 import './App.css'
-import { auth, database, signInWithGoogle } from '../firebase'
+import {
+  auth,
+  completeGoogleRedirectSignIn,
+  database,
+  signInWithGooglePopup,
+  signInWithGoogleRedirect,
+} from '../firebase'
 
 const USERS_PATH = 'users'
 
@@ -59,6 +65,20 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const resumeRedirect = async () => {
+      try {
+        await completeGoogleRedirectSignIn()
+      } catch (error) {
+        const errorCode = error?.code ?? 'unknown-error'
+        const errorMessage = error?.message ?? 'No additional details.'
+        setSaveStatus(`Google redirect failed (${errorCode}): ${errorMessage}`)
+      }
+    }
+
+    resumeRedirect()
+  }, [])
+
+  useEffect(() => {
     if (!currentUser?.uid) {
       setSavedLayouts([])
       return
@@ -81,8 +101,10 @@ function App() {
 
         list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
         setSavedLayouts(list)
-      } catch {
-        setSaveStatus('Could not fetch saved layouts from Firebase.')
+      } catch (error) {
+        const errorCode = error?.code ?? 'unknown-error'
+        const errorMessage = error?.message ?? 'No additional details.'
+        setSaveStatus(`Load failed (${errorCode}): ${errorMessage}`)
       }
     }
 
@@ -103,8 +125,9 @@ function App() {
       lastLoginAt: new Date().toISOString(),
     }
 
-    set(ref(database, profilePath), profile).catch(() => {
-      setSaveStatus('Could not store user profile in Firebase.')
+    set(ref(database, profilePath), profile).catch((error) => {
+      const errorCode = error?.code ?? 'unknown-error'
+      setSaveStatus(`Profile write failed (${errorCode}).`)
     })
   }, [currentUser])
 
@@ -252,8 +275,10 @@ function App() {
       })
       setSaveStatus(`Saved as "${normalizedName}".`)
       setSaveName('')
-    } catch {
-      setSaveStatus('Save failed. Check Firebase rules and config.')
+    } catch (error) {
+      const errorCode = error?.code ?? 'unknown-error'
+      const errorMessage = error?.message ?? 'No additional details.'
+      setSaveStatus(`Save failed (${errorCode}): ${errorMessage}`)
     }
   }
 
@@ -267,17 +292,38 @@ function App() {
       await remove(ref(database, savePath))
       setSavedLayouts((previous) => previous.filter((layout) => layout.id !== layoutId))
       setSaveStatus('Saved layout deleted.')
-    } catch {
-      setSaveStatus('Delete failed. Check Firebase rules and config.')
+    } catch (error) {
+      const errorCode = error?.code ?? 'unknown-error'
+      const errorMessage = error?.message ?? 'No additional details.'
+      setSaveStatus(`Delete failed (${errorCode}): ${errorMessage}`)
     }
   }
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle()
+      await signInWithGooglePopup()
       setSaveStatus('')
-    } catch {
-      setSaveStatus('Google sign-in failed. Please try again.')
+    } catch (error) {
+      const errorCode = error?.code ?? 'unknown-error'
+      const errorMessage = error?.message ?? 'No additional details.'
+
+      // Popup failures are common in strict browser settings; redirect is a safe fallback.
+      if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
+        setSaveStatus('Popup blocked. Redirecting to Google sign-in...')
+        try {
+          await signInWithGoogleRedirect()
+          return
+        } catch (redirectError) {
+          const redirectCode = redirectError?.code ?? 'unknown-error'
+          const redirectMessage = redirectError?.message ?? 'No additional details.'
+          setSaveStatus(
+            `Google redirect failed (${redirectCode}): ${redirectMessage}`,
+          )
+          return
+        }
+      }
+
+      setSaveStatus(`Google sign-in failed (${errorCode}): ${errorMessage}`)
     }
   }
 
@@ -289,8 +335,9 @@ function App() {
       setRoomGrids([])
       setFurnitureItems([])
       setSaveStatus('Signed out.')
-    } catch {
-      setSaveStatus('Sign-out failed.')
+    } catch (error) {
+      const errorCode = error?.code ?? 'unknown-error'
+      setSaveStatus(`Sign-out failed (${errorCode}).`)
     }
   }
 
