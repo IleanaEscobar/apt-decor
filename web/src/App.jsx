@@ -473,6 +473,44 @@ function App() {
     updateSelectedRotation((selectedFurniture?.rotation ?? 0) + 90)
   }
 
+  const updateSelectedFurnitureSize = (updates) => {
+    if (!selectedFurnitureId) {
+      return
+    }
+
+    const metrics = stageMetricsRef.current
+
+    setFurnitureItems((previous) =>
+      previous.map((item) => {
+        if (item.id !== selectedFurnitureId) {
+          return item
+        }
+
+        const nextWidthFt = Number(updates.widthFt ?? item.widthFt)
+        const nextDepthFt = Number(updates.depthFt ?? item.depthFt)
+        const safeWidthFt = Number.isFinite(nextWidthFt)
+          ? Math.max(nextWidthFt, 0.1)
+          : item.widthFt
+        const safeDepthFt = Number.isFinite(nextDepthFt)
+          ? Math.max(nextDepthFt, 0.1)
+          : item.depthFt
+
+        const widthPx = safeWidthFt * metrics.pxPerFtX
+        const depthPx = safeDepthFt * metrics.pxPerFtY
+        const maxX = Math.max(metrics.renderWidth - widthPx, 0)
+        const maxY = Math.max(metrics.renderHeight - depthPx, 0)
+
+        return {
+          ...item,
+          widthFt: safeWidthFt,
+          depthFt: safeDepthFt,
+          x: Math.min(item.x, maxX),
+          y: Math.min(item.y, maxY),
+        }
+      }),
+    )
+  }
+
   const removeSelectedFurniture = () => {
     if (!selectedFurnitureId) {
       return
@@ -843,6 +881,45 @@ function App() {
           >
             Remove Selected Furniture
           </button>
+        </div>
+
+        <div className="panel-block">
+          <h2>5. Edit Selected Furniture Size</h2>
+          <p className="hint">
+            Update width and depth for the selected furniture after it has been added.
+          </p>
+          <div className="row-two">
+            <label>
+              Width (ft)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={selectedFurniture?.widthFt ?? ''}
+                disabled={!selectedFurniture}
+                onChange={(event) =>
+                  updateSelectedFurnitureSize({
+                    widthFt: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
+              Depth (ft)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={selectedFurniture?.depthFt ?? ''}
+                disabled={!selectedFurniture}
+                onChange={(event) =>
+                  updateSelectedFurnitureSize({
+                    depthFt: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
         </div>
       </section>
 
