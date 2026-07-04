@@ -1,0 +1,234 @@
+.planner-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 22px 42px;
+  display: grid;
+  gap: 22px;
+}
+
+.page-header {
+  border: 2px solid var(--ink-soft);
+  border-radius: 20px;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 15%, var(--sun) 0%, transparent 42%),
+    radial-gradient(circle at 95% 20%, var(--sky) 0%, transparent 33%),
+    linear-gradient(120deg, #fffef5, #f7fbff);
+}
+
+.page-header h1 {
+  margin: 0 0 10px;
+  font-size: clamp(1.7rem, 3.5vw, 2.6rem);
+}
+
+.page-header p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.control-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.panel-block {
+  border: 1px solid var(--ink-soft);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.panel-block h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.panel-block label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+
+.row-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+input[type='text'],
+input[type='number'],
+input[type='file'] {
+  width: 100%;
+  border: 1px solid var(--ink-soft);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+  box-sizing: border-box;
+  color: var(--ink);
+}
+
+input[type='range'] {
+  width: 100%;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  background: var(--action);
+  color: #fff;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rotation-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.danger {
+  background: #912831;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+.stage-wrap {
+  border: 1px solid var(--ink-soft);
+  border-radius: 20px;
+  padding: 14px;
+  min-height: 300px;
+  background: linear-gradient(180deg, #f8fbff, #eef5fb);
+  overflow: auto;
+}
+
+.empty-state {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  font-size: 1.05rem;
+}
+
+.stage {
+  position: relative;
+  margin: 0 auto;
+  border: 2px solid var(--ink-soft);
+  border-radius: 8px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.floor-plan-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-grid {
+  position: absolute;
+  border: 2px solid hsl(var(--grid-hue), 55%, 42%);
+  border-radius: 6px;
+  background:
+    linear-gradient(
+      to right,
+      hsla(var(--grid-hue), 70%, 45%, 0.23) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      hsla(var(--grid-hue), 70%, 45%, 0.23) 1px,
+      transparent 1px
+    ),
+    hsla(var(--grid-hue), 70%, 55%, 0.14);
+  background-size: var(--cell-x) var(--cell-y), var(--cell-x) var(--cell-y), auto;
+  padding: 0;
+  transform-origin: center;
+}
+
+.room-grid.selected {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85), 0 0 0 5px var(--action);
+}
+
+.room-grid-label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 3px 6px;
+  border-radius: 999px;
+  max-width: calc(100% - 12px);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.furniture-item {
+  position: absolute;
+  border: 2px solid rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  padding: 0;
+  transform-origin: center;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.furniture-item.selected {
+  border-color: var(--action);
+  box-shadow: 0 0 0 2px rgba(10, 126, 164, 0.25);
+}
+
+.furniture-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.furniture-item span {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  max-width: calc(100% - 12px);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+@media (max-width: 780px) {
+  .planner-page {
+    padding: 18px 12px 28px;
+  }
+
+  .row-two,
+  .rotation-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-wrap {
+    padding: 10px;
+  }
+}
