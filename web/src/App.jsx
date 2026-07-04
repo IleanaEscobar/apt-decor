@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
+const SAVED_LAYOUTS_STORAGE_KEY = 'apt-decor.saved-layouts'
+
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
 function App() {
   const [floorPlan, setFloorPlan] = useState(null)
   const [floorSizeFt, setFloorSizeFt] = useState({ width: 20, height: 15 })
+  const [saveName, setSaveName] = useState('')
+  const [savedLayoutSearch, setSavedLayoutSearch] = useState('')
+  const [savedLayouts, setSavedLayouts] = useState([])
   const [roomGridDraft, setRoomGridDraft] = useState({
     name: '',
     widthFt: 10,
@@ -26,6 +40,30 @@ function App() {
     pxPerFtX: 0,
     pxPerFtY: 0,
   })
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_LAYOUTS_STORAGE_KEY)
+      if (!raw) {
+        return
+      }
+
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        setSavedLayouts(parsed)
+      }
+    } catch {
+      setSavedLayouts([])
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED_LAYOUTS_STORAGE_KEY, JSON.stringify(savedLayouts))
+    } catch {
+      // Ignore storage quota errors so the editor remains usable.
+    }
+  }, [savedLayouts])
 
   const stageMetrics = useMemo(() => {
     if (!floorPlan?.naturalWidth || !floorPlan?.naturalHeight) {
@@ -128,6 +166,52 @@ function App() {
   }, [])
 
   const selectedFurniture = furnitureItems.find((item) => item.id === selectedFurnitureId)
+  const filteredSavedLayouts = savedLayouts.filter((layout) =>
+    layout.name.toLowerCase().includes(savedLayoutSearch.toLowerCase()),
+  )
+
+  const serializeLayout = () => ({
+    floorPlan,
+    floorSizeFt,
+    roomGrids,
+    furnitureItems,
+  })
+
+  const loadLayout = (layout) => {
+    setFloorPlan(layout.floorPlan)
+    setFloorSizeFt(layout.floorSizeFt)
+    setRoomGrids(layout.roomGrids ?? [])
+    setFurnitureItems(layout.furnitureItems ?? [])
+    setSelectedRoomGridId(null)
+    setSelectedFurnitureId(null)
+  }
+
+  const handleSaveLayout = () => {
+    if (!saveName.trim() || !floorPlan) {
+      return
+    }
+
+    const snapshot = serializeLayout()
+    const nextLayout = {
+      id: crypto.randomUUID(),
+      name: saveName.trim(),
+      updatedAt: new Date().toISOString(),
+      ...snapshot,
+    }
+
+    setSavedLayouts((previous) => {
+      const remaining = previous.filter(
+        (layout) => layout.name.toLowerCase() !== nextLayout.name.toLowerCase(),
+      )
+
+      return [nextLayout, ...remaining]
+    })
+    setSaveName('')
+  }
+
+  const handleDeleteSavedLayout = (layoutId) => {
+    setSavedLayouts((previous) => previous.filter((layout) => layout.id !== layoutId))
+  }
 
   const handleFloorPlanUpload = (event) => {
     const file = event.target.files?.[0]
@@ -135,12 +219,13 @@ function App() {
       return
     }
 
-    const url = URL.createObjectURL(file)
     const image = new Image()
+    const tempUrl = URL.createObjectURL(file)
 
-    image.onload = () => {
+    image.onload = async () => {
+      const dataUrl = await readFileAsDataUrl(file)
       setFloorPlan({
-        url,
+        url: dataUrl,
         naturalWidth: image.naturalWidth,
         naturalHeight: image.naturalHeight,
       })
@@ -148,9 +233,10 @@ function App() {
       setSelectedRoomGridId(null)
       setFurnitureItems([])
       setSelectedFurnitureId(null)
+      URL.revokeObjectURL(tempUrl)
     }
 
-    image.src = url
+    image.src = tempUrl
   }
 
   const handleAddRoomGrid = (event) => {
@@ -210,24 +296,26 @@ function App() {
       return
     }
 
-    const imageUrl = URL.createObjectURL(furnitureDraft.imageFile)
+    const imageFile = furnitureDraft.imageFile
     const widthPx = furnitureDraft.widthFt * stageMetrics.pxPerFtX
     const depthPx = furnitureDraft.depthFt * stageMetrics.pxPerFtY
 
-    const newItem = {
-      id: crypto.randomUUID(),
-      name: furnitureDraft.name || 'Furniture',
-      widthFt: Number(furnitureDraft.widthFt),
-      depthFt: Number(furnitureDraft.depthFt),
-      imageUrl,
-      rotation: 0,
-      x: Math.max((stageMetrics.renderWidth - widthPx) / 2, 0),
-      y: Math.max((stageMetrics.renderHeight - depthPx) / 2, 0),
-    }
+    readFileAsDataUrl(imageFile).then((imageUrl) => {
+      const newItem = {
+        id: crypto.randomUUID(),
+        name: furnitureDraft.name || 'Furniture',
+        widthFt: Number(furnitureDraft.widthFt),
+        depthFt: Number(furnitureDraft.depthFt),
+        imageUrl,
+        rotation: 0,
+        x: Math.max((stageMetrics.renderWidth - widthPx) / 2, 0),
+        y: Math.max((stageMetrics.renderHeight - depthPx) / 2, 0),
+      }
 
-    setFurnitureItems((previous) => [...previous, newItem])
-    setSelectedFurnitureId(newItem.id)
-    setFurnitureDraft((previous) => ({ ...previous, imageFile: null, name: '' }))
+      setFurnitureItems((previous) => [...previous, newItem])
+      setSelectedFurnitureId(newItem.id)
+      setFurnitureDraft((previous) => ({ ...previous, imageFile: null, name: '' }))
+    })
   }
 
   const startDraggingFurniture = (event, item) => {
@@ -251,6 +339,10 @@ function App() {
           : item,
       ),
     )
+  }
+
+  const rotateSelectedByNinety = () => {
+    updateSelectedRotation((selectedFurniture?.rotation ?? 0) + 90)
   }
 
   const removeSelectedFurniture = () => {
@@ -312,6 +404,51 @@ function App() {
                 }
               />
             </label>
+          </div>
+        </div>
+
+        <div className="panel-block">
+          <h2>Save / Reload</h2>
+          <label>
+            Save current layout as
+            <input
+              type="text"
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              placeholder="Ex: Living room layout"
+            />
+          </label>
+          <button type="button" onClick={handleSaveLayout} disabled={!floorPlan || !saveName.trim()}>
+            Save Layout
+          </button>
+          <label>
+            Search saved layouts
+            <input
+              type="text"
+              value={savedLayoutSearch}
+              onChange={(event) => setSavedLayoutSearch(event.target.value)}
+              placeholder="Type a saved layout name"
+            />
+          </label>
+          <div className="saved-layout-list">
+            {filteredSavedLayouts.length === 0 ? (
+              <p className="hint">No saved layouts match your search.</p>
+            ) : (
+              filteredSavedLayouts.map((layout) => (
+                <div key={layout.id} className="saved-layout-row">
+                  <button type="button" onClick={() => loadLayout(layout)}>
+                    Load {layout.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleDeleteSavedLayout(layout.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -482,6 +619,13 @@ function App() {
               Rotate +15°
             </button>
           </div>
+          <button
+            type="button"
+            onClick={rotateSelectedByNinety}
+            disabled={!selectedFurniture}
+          >
+            Rotate +90°
+          </button>
           <button
             type="button"
             className="danger"

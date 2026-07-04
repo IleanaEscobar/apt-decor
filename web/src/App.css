@@ -52,6 +52,21 @@
   font-size: 0.92rem;
 }
 
+.saved-layout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.saved-layout-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.saved-layout-row button {
+  width: 100%;
+}
+
 .row-two {
   display: grid;
   grid-template-columns: 1fr 1fr;
