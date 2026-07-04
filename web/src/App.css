@@ -26,6 +26,25 @@
   max-width: 70ch;
 }
 
+.auth-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-card {
+  border: 1px solid var(--ink-soft);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 22px;
+  max-width: 520px;
+  margin: 56px auto;
+  display: grid;
+  gap: 12px;
+}
+
 .control-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

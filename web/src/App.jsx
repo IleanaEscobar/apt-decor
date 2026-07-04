@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { get, ref, remove, set } from 'firebase/database'
 import './App.css'
+import { auth, database, signInWithGoogle } from '../firebase'
 
-const SAVED_LAYOUTS_STORAGE_KEY = 'apt-decor.saved-layouts'
+const USERS_PATH = 'users'
+
+const toLayoutKey = (name) => encodeURIComponent(name.trim().toLowerCase())
 
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
@@ -13,11 +18,14 @@ const readFileAsDataUrl = (file) =>
   })
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [floorPlan, setFloorPlan] = useState(null)
   const [floorSizeFt, setFloorSizeFt] = useState({ width: 20, height: 15 })
   const [saveName, setSaveName] = useState('')
   const [savedLayoutSearch, setSavedLayoutSearch] = useState('')
   const [savedLayouts, setSavedLayouts] = useState([])
+  const [saveStatus, setSaveStatus] = useState('')
   const [roomGridDraft, setRoomGridDraft] = useState({
     name: '',
     widthFt: 10,
@@ -42,28 +50,63 @@ function App() {
   })
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SAVED_LAYOUTS_STORAGE_KEY)
-      if (!raw) {
-        return
-      }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user)
+      setAuthLoading(false)
+    })
 
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        setSavedLayouts(parsed)
-      }
-    } catch {
-      setSavedLayouts([])
-    }
+    return () => unsubscribe()
   }, [])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(SAVED_LAYOUTS_STORAGE_KEY, JSON.stringify(savedLayouts))
-    } catch {
-      // Ignore storage quota errors so the editor remains usable.
+    if (!currentUser?.uid) {
+      setSavedLayouts([])
+      return
     }
-  }, [savedLayouts])
+
+    const loadSavedLayouts = async () => {
+      try {
+        const savedLayoutsPath = `${USERS_PATH}/${currentUser.uid}/layouts`
+        const snapshot = await get(ref(database, savedLayoutsPath))
+        if (!snapshot.exists()) {
+          setSavedLayouts([])
+          return
+        }
+
+        const value = snapshot.val()
+        const list = Object.entries(value).map(([key, layout]) => ({
+          id: key,
+          ...layout,
+        }))
+
+        list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+        setSavedLayouts(list)
+      } catch {
+        setSaveStatus('Could not fetch saved layouts from Firebase.')
+      }
+    }
+
+    loadSavedLayouts()
+  }, [currentUser?.uid])
+
+  useEffect(() => {
+    if (!currentUser?.uid) {
+      return
+    }
+
+    const profilePath = `${USERS_PATH}/${currentUser.uid}/profile`
+    const profile = {
+      uid: currentUser.uid,
+      displayName: currentUser.displayName ?? '',
+      email: currentUser.email ?? '',
+      photoURL: currentUser.photoURL ?? '',
+      lastLoginAt: new Date().toISOString(),
+    }
+
+    set(ref(database, profilePath), profile).catch(() => {
+      setSaveStatus('Could not store user profile in Firebase.')
+    })
+  }, [currentUser])
 
   const stageMetrics = useMemo(() => {
     if (!floorPlan?.naturalWidth || !floorPlan?.naturalHeight) {
@@ -186,31 +229,69 @@ function App() {
     setSelectedFurnitureId(null)
   }
 
-  const handleSaveLayout = () => {
-    if (!saveName.trim() || !floorPlan) {
+  const handleSaveLayout = async () => {
+    if (!currentUser?.uid || !saveName.trim() || !floorPlan) {
       return
     }
 
+    const normalizedName = saveName.trim()
+    const layoutKey = toLayoutKey(normalizedName)
     const snapshot = serializeLayout()
     const nextLayout = {
-      id: crypto.randomUUID(),
-      name: saveName.trim(),
+      name: normalizedName,
       updatedAt: new Date().toISOString(),
       ...snapshot,
     }
 
-    setSavedLayouts((previous) => {
-      const remaining = previous.filter(
-        (layout) => layout.name.toLowerCase() !== nextLayout.name.toLowerCase(),
-      )
-
-      return [nextLayout, ...remaining]
-    })
-    setSaveName('')
+    try {
+      const savePath = `${USERS_PATH}/${currentUser.uid}/layouts/${layoutKey}`
+      await set(ref(database, savePath), nextLayout)
+      setSavedLayouts((previous) => {
+        const remaining = previous.filter((layout) => layout.id !== layoutKey)
+        return [{ id: layoutKey, ...nextLayout }, ...remaining]
+      })
+      setSaveStatus(`Saved as "${normalizedName}".`)
+      setSaveName('')
+    } catch {
+      setSaveStatus('Save failed. Check Firebase rules and config.')
+    }
   }
 
-  const handleDeleteSavedLayout = (layoutId) => {
-    setSavedLayouts((previous) => previous.filter((layout) => layout.id !== layoutId))
+  const handleDeleteSavedLayout = async (layoutId) => {
+    if (!currentUser?.uid) {
+      return
+    }
+
+    try {
+      const savePath = `${USERS_PATH}/${currentUser.uid}/layouts/${layoutId}`
+      await remove(ref(database, savePath))
+      setSavedLayouts((previous) => previous.filter((layout) => layout.id !== layoutId))
+      setSaveStatus('Saved layout deleted.')
+    } catch {
+      setSaveStatus('Delete failed. Check Firebase rules and config.')
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await signInWithGoogle()
+      setSaveStatus('')
+    } catch {
+      setSaveStatus('Google sign-in failed. Please try again.')
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth)
+      setSavedLayouts([])
+      setFloorPlan(null)
+      setRoomGrids([])
+      setFurnitureItems([])
+      setSaveStatus('Signed out.')
+    } catch {
+      setSaveStatus('Sign-out failed.')
+    }
   }
 
   const handleFloorPlanUpload = (event) => {
@@ -356,6 +437,62 @@ function App() {
     setSelectedFurnitureId(null)
   }
 
+  const bringSelectedFurnitureToFront = () => {
+    if (!selectedFurnitureId) {
+      return
+    }
+
+    setFurnitureItems((previous) => {
+      const selectedItem = previous.find((item) => item.id === selectedFurnitureId)
+      if (!selectedItem) {
+        return previous
+      }
+
+      return [...previous.filter((item) => item.id !== selectedFurnitureId), selectedItem]
+    })
+  }
+
+  const sendSelectedFurnitureToBack = () => {
+    if (!selectedFurnitureId) {
+      return
+    }
+
+    setFurnitureItems((previous) => {
+      const selectedItem = previous.find((item) => item.id === selectedFurnitureId)
+      if (!selectedItem) {
+        return previous
+      }
+
+      return [selectedItem, ...previous.filter((item) => item.id !== selectedFurnitureId)]
+    })
+  }
+
+  if (authLoading) {
+    return (
+      <main className="planner-page">
+        <section className="auth-card">
+          <h1>Loading account...</h1>
+          <p>Checking your sign-in session.</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (!currentUser) {
+    return (
+      <main className="planner-page">
+        <section className="auth-card">
+          <h1>Sign in required</h1>
+          <p>Use Google Sign-In to access your private layouts.</p>
+          <button type="button" onClick={handleGoogleSignIn}>
+            Continue with Google
+          </button>
+          {saveStatus ? <p className="hint">{saveStatus}</p> : null}
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="planner-page">
       <header className="page-header">
@@ -364,6 +501,14 @@ function App() {
           Upload a floor plan, calibrate it in feet, then drop furniture images in
           true size, drag them around, and rotate to test layouts.
         </p>
+        <div className="auth-row">
+          <p className="hint">
+            Signed in as {currentUser.displayName || currentUser.email || currentUser.uid}
+          </p>
+          <button type="button" onClick={handleSignOut}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       <section className="control-panel">
@@ -450,6 +595,7 @@ function App() {
               ))
             )}
           </div>
+          {saveStatus ? <p className="hint">{saveStatus}</p> : null}
         </div>
 
         <form className="panel-block" onSubmit={handleAddRoomGrid}>
@@ -617,6 +763,22 @@ function App() {
               disabled={!selectedFurniture}
             >
               Rotate +15°
+            </button>
+          </div>
+          <div className="rotation-buttons">
+            <button
+              type="button"
+              onClick={sendSelectedFurnitureToBack}
+              disabled={!selectedFurniture}
+            >
+              Send to Back
+            </button>
+            <button
+              type="button"
+              onClick={bringSelectedFurnitureToFront}
+              disabled={!selectedFurniture}
+            >
+              Bring to Front
             </button>
           </div>
           <button
